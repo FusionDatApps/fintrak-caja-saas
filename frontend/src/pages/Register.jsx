@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiPost } from "../lib/api";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -8,9 +9,11 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
 
     if (!name || !email || !password) {
       setError("Todos los campos son obligatorios");
@@ -22,10 +25,15 @@ export default function Register() {
       return;
     }
 
-    // Simulación de registro correcto
-    console.log("Registro:", { name, email, password });
-
-    navigate("/login");
+    try {
+      setLoading(true);
+      await apiPost("/auth/register", { name, email, password });
+      navigate("/login");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -34,7 +42,7 @@ export default function Register() {
 
       <form
         onSubmit={handleSubmit}
-        style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 300 }}
+        style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}
       >
         <input
           type="text"
@@ -59,7 +67,9 @@ export default function Register() {
 
         {error && <span style={{ color: "red" }}>{error}</span>}
 
-        <button type="submit">Crear cuenta</button>
+        <button type="submit" disabled={loading}>
+          {loading ? "Creando..." : "Crear cuenta"}
+        </button>
       </form>
     </div>
   );
