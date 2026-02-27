@@ -24,3 +24,15 @@ export async function apiGet(path, token) {
   if (!res.ok) throw new Error(data.error || "Error en la API");
   return data;
 }
+// DELETE
+
+export async function apiDelete(path, token) {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Error en la API");
+  return data;
+}
