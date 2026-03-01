@@ -1,8 +1,8 @@
-// frontend/src/lib/summaryApi.js
+﻿// frontend/src/lib/summaryApi.js
 import { apiGet } from "./api";
 
 /**
- * Resumen mensual:
+ * Obtiene el resumen mensual para un mes (YYYY-MM).
  * Backend: GET /summary/monthly?month=YYYY-MM
  */
 export function getMonthlySummary(token, month) {
@@ -10,7 +10,7 @@ export function getMonthlySummary(token, month) {
 }
 
 /**
- * Comparativo mensual:
+ * Compara dos meses (YYYY-MM vs YYYY-MM).
  * Backend: GET /summary/compare?monthA=YYYY-MM&monthB=YYYY-MM
  */
 export function getMonthlyCompare(token, monthA, monthB) {
@@ -18,7 +18,7 @@ export function getMonthlyCompare(token, monthA, monthB) {
 }
 
 /**
- * Tendencia mensual + MoM:
+ * Tendencia mensual + MoM (Month-over-Month = variación mes contra mes).
  * Backend: GET /summary/trend?from=YYYY-MM&to=YYYY-MM
  */
 export function getMonthlyTrend(token, from, to) {

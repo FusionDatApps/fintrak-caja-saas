@@ -1,9 +1,16 @@
-// frontend/src/pages/Dashboard.jsx
+﻿// frontend/src/pages/Dashboard.jsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+// apiGet se usa para /me (validación del token)
 import { apiGet } from "../lib/api";
+
+// Estas funciones encapsulan llamadas al backend (summary/compare/trend)
 import { getMonthlyCompare, getMonthlySummary, getMonthlyTrend } from "../lib/summaryApi";
 
+/**
+ * Devuelve el mes actual en formato YYYY-MM (compatible con <input type="month" />).
+ */
 function ymToday() {
   const d = new Date();
   const y = d.getFullYear();
@@ -11,11 +18,19 @@ function ymToday() {
   return `${y}-${m}`;
 }
 
+/**
+ * Formatea un número como moneda COP (sin símbolo, se lo ponemos nosotros).
+ * Nota: NumberFormat("es-CO") mete separadores correctos para Colombia.
+ */
 function moneyCOP(v) {
   const n = Number(v || 0);
   return new Intl.NumberFormat("es-CO").format(n);
 }
 
+/**
+ * Formatea porcentajes para MoM / % cambio.
+ * - El backend devuelve null cuando no se puede calcular (por ejemplo base=0).
+ */
 function fmtPct(v) {
   if (v === null || v === undefined) return "N/A";
   const n = Number(v);
@@ -27,33 +42,44 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   // =========================
-  // MVP existente
+  // ESTADO: sesión y resumen (MVP)
   // =========================
   const [user, setUser] = useState(null);
+
+  // Mes activo para el resumen mensual (selector existente del MVP)
+  const [month, setMonth] = useState(ymToday());
+
   const [summary, setSummary] = useState(null);
   const [authError, setAuthError] = useState("");
   const [summaryError, setSummaryError] = useState("");
-  const [month, setMonth] = useState(ymToday());
 
   // =========================
-  // Día 5 - A: Comparativo
+  // ESTADO: comparativo mensual (Mes A vs Mes B)
   // =========================
   const [monthA, setMonthA] = useState(ymToday());
   const [monthB, setMonthB] = useState(ymToday());
+
   const [compare, setCompare] = useState(null);
   const [compareError, setCompareError] = useState("");
   const [compareLoading, setCompareLoading] = useState(false);
 
   // =========================
-  // Día 5 - B: Tendencia + MoM
+  // ESTADO: tendencia + MoM (rango From/To)
   // =========================
   const [trendFrom, setTrendFrom] = useState(ymToday());
   const [trendTo, setTrendTo] = useState(ymToday());
+
   const [trend, setTrend] = useState(null);
   const [trendError, setTrendError] = useState("");
   const [trendLoading, setTrendLoading] = useState(false);
 
-  // Carga inicial: usuario + resumen mensual
+  /**
+   * EFECTO PRINCIPAL:
+   * 1) Verifica token y carga /me
+   * 2) Carga resumen mensual del mes seleccionado (month)
+   *
+   * Nota: compare/trend NO se cargan automáticamente para evitar spamear el backend.
+   */
   useEffect(() => {
     let alive = true;
 
@@ -65,25 +91,29 @@ export default function Dashboard() {
 
     (async () => {
       try {
-        // 1) Validar token
+        // 1) Validar token con /me (si falla, es sesión inválida)
         const me = await apiGet("/me", token);
         if (!alive) return;
+
         setUser(me.user);
         setAuthError("");
 
-        // 2) Resumen mensual (MVP)
+        // 2) Cargar resumen mensual (si falla, NO cerramos sesión)
         try {
           const sum = await getMonthlySummary(token, month);
           if (!alive) return;
+
           setSummary(sum);
           setSummaryError("");
         } catch (err) {
           if (!alive) return;
+
           setSummary(null);
           setSummaryError(err.message || "No se pudo cargar el resumen");
         }
       } catch (err) {
         if (!alive) return;
+
         setAuthError(err.message || "Sesión inválida");
         localStorage.removeItem("token");
         navigate("/login");
@@ -95,11 +125,20 @@ export default function Dashboard() {
     };
   }, [navigate, month]);
 
-  // Acción controlada: comparar meses
+  /**
+   * Acción explícita: comparar Mes A vs Mes B.
+   * No lo hacemos automático en useEffect para:
+   * - no disparar requests en cada cambio del input
+   * - mantener UX controlada con botón
+   */
   async function handleCompare() {
     const token = localStorage.getItem("token");
-    if (!token) return navigate("/login");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
 
+    // Validación mínima en frontend (el backend también valida).
     if (!monthA || !monthB) {
       setCompare(null);
       setCompareError("Debes seleccionar Mes A y Mes B.");
@@ -121,10 +160,15 @@ export default function Dashboard() {
     }
   }
 
-  // Acción controlada: cargar tendencia
+  /**
+   * Acción explícita: cargar tendencia y MoM.
+   */
   async function handleTrend() {
     const token = localStorage.getItem("token");
-    if (!token) return navigate("/login");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
 
     if (!trendFrom || !trendTo) {
       setTrend(null);
@@ -185,9 +229,7 @@ export default function Dashboard() {
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
           </div>
 
-          {summaryError && (
-            <p style={{ color: "crimson" }}>Error cargando resumen: {summaryError}</p>
-          )}
+          {summaryError && <p style={{ color: "crimson" }}>Error cargando resumen: {summaryError}</p>}
 
           {!summary ? (
             <p>Cargando resumen...</p>
@@ -215,9 +257,9 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* =========================
-              Día 5 - A: Comparativo
-             ========================= */}
+          {/* ==========================================
+              Día 5 - A: Comparativo mensual (A vs B)
+             ========================================== */}
           <hr style={{ margin: "20px 0" }} />
           <h3>Comparativo mensual (Mes A vs Mes B)</h3>
 
@@ -280,15 +322,19 @@ export default function Dashboard() {
                     return (
                       <tr key={key}>
                         <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{label}</td>
+
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(a)}` : a ?? 0}
                         </td>
+
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(b)}` : b ?? 0}
                         </td>
+
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(d)}` : d ?? 0}
                         </td>
+
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {fmtPct(p)}
                         </td>
@@ -304,9 +350,9 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* =========================
-              Día 5 - B: Tendencia + MoM
-             ========================= */}
+          {/* ==========================================
+              Día 5 - B: Tendencia mensual + MoM
+             ========================================== */}
           <hr style={{ margin: "20px 0" }} />
           <h3>Tendencia mensual y crecimiento MoM</h3>
 
