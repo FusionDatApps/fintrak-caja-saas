@@ -20,7 +20,6 @@ function ymToday() {
 
 /**
  * Formatea un número como moneda COP (sin símbolo, se lo ponemos nosotros).
- * Nota: NumberFormat("es-CO") mete separadores correctos para Colombia.
  */
 function moneyCOP(v) {
   const n = Number(v || 0);
@@ -127,9 +126,6 @@ export default function Dashboard() {
 
   /**
    * Acción explícita: comparar Mes A vs Mes B.
-   * No lo hacemos automático en useEffect para:
-   * - no disparar requests en cada cambio del input
-   * - mantener UX controlada con botón
    */
   async function handleCompare() {
     const token = localStorage.getItem("token");
@@ -138,7 +134,6 @@ export default function Dashboard() {
       return;
     }
 
-    // Validación mínima en frontend (el backend también valida).
     if (!monthA || !monthB) {
       setCompare(null);
       setCompareError("Debes seleccionar Mes A y Mes B.");
@@ -223,9 +218,7 @@ export default function Dashboard() {
           <h3>Resumen del mes: {month}</h3>
 
           <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 12, color: "#555", marginRight: 8 }}>
-              Cambiar mes:
-            </label>
+            <label style={{ fontSize: 12, color: "#555", marginRight: 8 }}>Cambiar mes:</label>
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
           </div>
 
@@ -322,19 +315,15 @@ export default function Dashboard() {
                     return (
                       <tr key={key}>
                         <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{label}</td>
-
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(a)}` : a ?? 0}
                         </td>
-
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(b)}` : b ?? 0}
                         </td>
-
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(d)}` : d ?? 0}
                         </td>
-
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {fmtPct(p)}
                         </td>
