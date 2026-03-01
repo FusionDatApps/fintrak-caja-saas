@@ -2,7 +2,7 @@
 import { apiGet } from "./api";
 
 /**
- * Obtiene el resumen mensual para un mes (YYYY-MM).
+ * Resumen mensual:
  * Backend: GET /summary/monthly?month=YYYY-MM
  */
 export function getMonthlySummary(token, month) {
@@ -10,12 +10,17 @@ export function getMonthlySummary(token, month) {
 }
 
 /**
- * Compara dos meses (YYYY-MM vs YYYY-MM).
+ * Comparativo mensual:
  * Backend: GET /summary/compare?monthA=YYYY-MM&monthB=YYYY-MM
- *
- * Devuelve:
- * { monthA, monthB, delta, pct_change, meta }
  */
 export function getMonthlyCompare(token, monthA, monthB) {
   return apiGet(`/summary/compare?monthA=${monthA}&monthB=${monthB}`, token);
+}
+
+/**
+ * Tendencia mensual + MoM:
+ * Backend: GET /summary/trend?from=YYYY-MM&to=YYYY-MM
+ */
+export function getMonthlyTrend(token, from, to) {
+  return apiGet(`/summary/trend?from=${from}&to=${to}`, token);
 }

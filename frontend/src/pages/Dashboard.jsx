@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet } from "../lib/api";
-import { getMonthlyCompare, getMonthlySummary } from "../lib/summaryApi";
+import { getMonthlyCompare, getMonthlySummary, getMonthlyTrend } from "../lib/summaryApi";
 
 function ymToday() {
   const d = new Date();
@@ -17,7 +17,6 @@ function moneyCOP(v) {
 }
 
 function fmtPct(v) {
-  // Backend devuelve null cuando no se puede calcular (base=0).
   if (v === null || v === undefined) return "N/A";
   const n = Number(v);
   if (Number.isNaN(n)) return "N/A";
@@ -27,26 +26,34 @@ function fmtPct(v) {
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  // Estado actual (MVP)
+  // =========================
+  // MVP existente
+  // =========================
   const [user, setUser] = useState(null);
   const [summary, setSummary] = useState(null);
   const [authError, setAuthError] = useState("");
   const [summaryError, setSummaryError] = useState("");
-
-  // Selector de mes existente (MVP)
   const [month, setMonth] = useState(ymToday());
 
-  // ==============================
-  // NUEVO (Día 5 - Sección A): Comparativo Mensual
-  // ==============================
-  const [monthA, setMonthA] = useState(ymToday()); // default: mes actual (puedes cambiarlo)
-  const [monthB, setMonthB] = useState(ymToday()); // default: mes actual
+  // =========================
+  // Día 5 - A: Comparativo
+  // =========================
+  const [monthA, setMonthA] = useState(ymToday());
+  const [monthB, setMonthB] = useState(ymToday());
   const [compare, setCompare] = useState(null);
   const [compareError, setCompareError] = useState("");
   const [compareLoading, setCompareLoading] = useState(false);
 
-  // Guardamos token en estado local del efecto (no global)
-  // porque el token vive en localStorage.
+  // =========================
+  // Día 5 - B: Tendencia + MoM
+  // =========================
+  const [trendFrom, setTrendFrom] = useState(ymToday());
+  const [trendTo, setTrendTo] = useState(ymToday());
+  const [trend, setTrend] = useState(null);
+  const [trendError, setTrendError] = useState("");
+  const [trendLoading, setTrendLoading] = useState(false);
+
+  // Carga inicial: usuario + resumen mensual
   useEffect(() => {
     let alive = true;
 
@@ -58,13 +65,13 @@ export default function Dashboard() {
 
     (async () => {
       try {
-        // 1) Validar token con /me (si esto falla, es problema de sesión)
+        // 1) Validar token
         const me = await apiGet("/me", token);
         if (!alive) return;
         setUser(me.user);
         setAuthError("");
 
-        // 2) Cargar resumen mensual (MVP). Si falla, NO cierres sesión.
+        // 2) Resumen mensual (MVP)
         try {
           const sum = await getMonthlySummary(token, month);
           if (!alive) return;
@@ -88,20 +95,11 @@ export default function Dashboard() {
     };
   }, [navigate, month]);
 
-  /**
-   * Acción explícita: comparar mes A vs mes B.
-   * No lo hacemos automático en useEffect para:
-   * - no spamear el backend por cada cambio de input
-   * - mantener UX con botón controlado
-   */
+  // Acción controlada: comparar meses
   async function handleCompare() {
     const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-      return;
-    }
+    if (!token) return navigate("/login");
 
-    // Validación mínima en frontend (el backend también valida).
     if (!monthA || !monthB) {
       setCompare(null);
       setCompareError("Debes seleccionar Mes A y Mes B.");
@@ -120,6 +118,32 @@ export default function Dashboard() {
       setCompareError(err.message || "No se pudo comparar los meses");
     } finally {
       setCompareLoading(false);
+    }
+  }
+
+  // Acción controlada: cargar tendencia
+  async function handleTrend() {
+    const token = localStorage.getItem("token");
+    if (!token) return navigate("/login");
+
+    if (!trendFrom || !trendTo) {
+      setTrend(null);
+      setTrendError("Debes seleccionar un rango: desde y hasta.");
+      return;
+    }
+
+    setTrendLoading(true);
+    setTrendError("");
+    setTrend(null);
+
+    try {
+      const data = await getMonthlyTrend(token, trendFrom, trendTo);
+      setTrend(data);
+    } catch (err) {
+      setTrend(null);
+      setTrendError(err.message || "No se pudo cargar la tendencia");
+    } finally {
+      setTrendLoading(false);
     }
   }
 
@@ -158,7 +182,6 @@ export default function Dashboard() {
             <label style={{ fontSize: 12, color: "#555", marginRight: 8 }}>
               Cambiar mes:
             </label>
-
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
           </div>
 
@@ -192,9 +215,9 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* ==========================================
-              Día 5 - A: Comparativo mensual (A vs B)
-             ========================================== */}
+          {/* =========================
+              Día 5 - A: Comparativo
+             ========================= */}
           <hr style={{ margin: "20px 0" }} />
           <h3>Comparativo mensual (Mes A vs Mes B)</h3>
 
@@ -222,7 +245,6 @@ export default function Dashboard() {
             </p>
           ) : (
             <div style={{ marginTop: 12 }}>
-              {/* Tabla simple para mostrar A, B, delta y % */}
               <table style={{ borderCollapse: "collapse", width: "100%", maxWidth: 760 }}>
                 <thead>
                   <tr>
@@ -258,19 +280,15 @@ export default function Dashboard() {
                     return (
                       <tr key={key}>
                         <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{label}</td>
-
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(a)}` : a ?? 0}
                         </td>
-
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(b)}` : b ?? 0}
                         </td>
-
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {isMoney ? `$${moneyCOP(d)}` : d ?? 0}
                         </td>
-
                         <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                           {fmtPct(p)}
                         </td>
@@ -282,6 +300,113 @@ export default function Dashboard() {
 
               <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
                 Nota: el % cambio muestra <strong>N/A</strong> cuando el valor base (Mes A) es 0.
+              </p>
+            </div>
+          )}
+
+          {/* =========================
+              Día 5 - B: Tendencia + MoM
+             ========================= */}
+          <hr style={{ margin: "20px 0" }} />
+          <h3>Tendencia mensual y crecimiento MoM</h3>
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: "#555" }}>Desde</label>
+              <input type="month" value={trendFrom} onChange={(e) => setTrendFrom(e.target.value)} />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: "#555" }}>Hasta</label>
+              <input type="month" value={trendTo} onChange={(e) => setTrendTo(e.target.value)} />
+            </div>
+
+            <button onClick={handleTrend} disabled={trendLoading}>
+              {trendLoading ? "Cargando..." : "Cargar tendencia"}
+            </button>
+          </div>
+
+          {trendError && <p style={{ color: "crimson" }}>{trendError}</p>}
+
+          {!trend ? (
+            <p style={{ fontSize: 12, color: "#666" }}>
+              Selecciona un rango y pulsa <strong>Cargar tendencia</strong>.
+            </p>
+          ) : (
+            <div style={{ marginTop: 12 }}>
+              <p style={{ fontSize: 12, color: "#666" }}>
+                Rango: <strong>{trend.from}</strong> → <strong>{trend.to}</strong>
+              </p>
+
+              <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                <thead>
+                  <tr>
+                    {[
+                      "Mes",
+                      "Ingresos",
+                      "MoM Ingresos",
+                      "Egresos",
+                      "MoM Egresos",
+                      "Balance",
+                      "MoM Balance",
+                      "# Mov",
+                      "MoM # Mov",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          textAlign: h === "Mes" ? "left" : "right",
+                          borderBottom: "1px solid #ddd",
+                          padding: 8,
+                          fontSize: 12,
+                          color: "#444",
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {trend.months.map((m) => (
+                    <tr key={m.month}>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{m.month}</td>
+
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        ${moneyCOP(m.income)}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        {fmtPct(m.mom_income)}
+                      </td>
+
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        ${moneyCOP(m.expense)}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        {fmtPct(m.mom_expense)}
+                      </td>
+
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        ${moneyCOP(m.balance)}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        {fmtPct(m.mom_balance)}
+                      </td>
+
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        {m.count ?? 0}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        {fmtPct(m.mom_count)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
+                Nota: MoM es <strong>N/A</strong> cuando no hay mes anterior o la base del mes anterior es 0.
               </p>
             </div>
           )}
