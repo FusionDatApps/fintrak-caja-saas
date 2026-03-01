@@ -1,4 +1,4 @@
-// backend/src/routes/summary.routes.js
+﻿// backend/src/routes/summary.routes.js
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
@@ -9,11 +9,13 @@ const router = Router();
 /**
  * Validación estricta de meses:
  * - Formato: YYYY-MM
+ * - Esto valida formato, no valida que el mes exista (eso lo validamos con otra regla).
  */
 const monthSchema = z.string().regex(/^\d{4}-\d{2}$/, "Formato inválido. Usa YYYY-MM");
 
 /**
  * Validación extra para que el mes sea 01..12.
+ * (Porque 2026-99 pasa la regex y eso es basura.)
  */
 function isValidMonthRange(yyyyMM) {
   const mm = Number(yyyyMM.split("-")[1]);
@@ -22,8 +24,8 @@ function isValidMonthRange(yyyyMM) {
 
 /**
  * Helpers de cálculo
- * - pctChange: % cambio vs base
- * - Si base = 0 => null (evita división por cero)
+ * - pctChange: % cambio vs base (monthA o mes anterior)
+ * - Si base = 0 => null (evita división por cero y porcentajes infinitos)
  */
 function pctChange(base, next) {
   const b = Number(base ?? 0);
@@ -33,45 +35,47 @@ function pctChange(base, next) {
 }
 
 /**
+ * Convierte YYYY-MM -> YYYY-MM-01 (string), para usar como fecha base del mes.
+ */
+function monthToStartDate(yyyyMM) {
+  return `${yyyyMM}-01`;
+}
+
+/**
  * Genera una lista de meses YYYY-MM entre from y to (incluidos).
  * Ej: from=2026-01, to=2026-03 => ["2026-01","2026-02","2026-03"]
  *
- * IMPORTANTE:
- * - Esto es determinista y no depende del locale.
- * - No “adivina” meses: si el rango es inválido, lo paramos antes.
+ * Nota: esto NO depende de locale. Se construye con Date UTC para evitar líos.
  */
 function monthsBetween(from, to) {
   const [fy, fm] = from.split("-").map(Number);
   const [ty, tm] = to.split("-").map(Number);
 
-  let y = fy;
-  let m = fm;
+  // Date.UTC: mes 0-based (0=enero)
+  const start = new Date(Date.UTC(fy, fm - 1, 1));
+  const end = new Date(Date.UTC(ty, tm - 1, 1));
 
   const out = [];
-  while (y < ty || (y === ty && m <= tm)) {
-    out.push(`${y}-${String(m).padStart(2, "0")}`);
-    m += 1;
-    if (m === 13) {
-      m = 1;
-      y += 1;
-    }
+  const cur = new Date(start);
+
+  while (cur <= end) {
+    const y = cur.getUTCFullYear();
+    const m = String(cur.getUTCMonth() + 1).padStart(2, "0");
+    out.push(`${y}-${m}`);
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
   }
+
   return out;
 }
 
 /**
- * Convierte YYYY-MM a YYYY-MM-01 (date)
- */
-function monthToStartDate(month) {
-  return `${month}-01`;
-}
-
-/**
- * Consulta de resumen mensual para un usuario y un mes.
- * Devuelve: { month, income, expense, balance, count }
+ * Resumen mensual robusto para un usuario y un mes.
+ * Usa rango [inicioMes, inicioMesSiguiente) con occurred_on.
+ * COALESCE para que meses vacíos devuelvan 0 en vez de null.
  */
 async function getMonthlySummaryForUser(userId, month) {
-  const start = `${month}-01`; // YYYY-MM-01
+  const start = monthToStartDate(month); // YYYY-MM-01
+
   const result = await pool.query(
     `
     SELECT
@@ -114,10 +118,20 @@ router.get("/monthly", requireAuth, async (req, res) => {
 
 /**
  * GET /summary/compare?monthA=YYYY-MM&monthB=YYYY-MM
+ * Comparativo de mes A vs mes B (para el usuario autenticado)
+ *
+ * Respuesta:
+ * {
+ *   monthA: {...},
+ *   monthB: {...},
+ *   delta: {...},         // (B - A)
+ *   pct_change: {...}     // % cambio vs A, null si A es 0
+ * }
  */
 router.get("/compare", requireAuth, async (req, res) => {
   const { monthA, monthB } = req.query;
 
+  // Validación formato YYYY-MM
   const parsedA = monthSchema.safeParse(monthA);
   const parsedB = monthSchema.safeParse(monthB);
 
@@ -127,6 +141,7 @@ router.get("/compare", requireAuth, async (req, res) => {
     });
   }
 
+  // Validación rango 01..12
   if (!isValidMonthRange(monthA) || !isValidMonthRange(monthB)) {
     return res.status(400).json({
       error: "Mes inválido. monthA y monthB deben estar entre 01 y 12",
@@ -135,11 +150,13 @@ router.get("/compare", requireAuth, async (req, res) => {
 
   const userId = req.user.id;
 
+  // Consultas en paralelo
   const [a, b] = await Promise.all([
     getMonthlySummaryForUser(userId, monthA),
     getMonthlySummaryForUser(userId, monthB),
   ]);
 
+  // Delta = B - A
   const delta = {
     income: Number(b.income) - Number(a.income),
     expense: Number(b.expense) - Number(a.expense),
@@ -147,6 +164,7 @@ router.get("/compare", requireAuth, async (req, res) => {
     count: Number(b.count) - Number(a.count),
   };
 
+  // % cambio vs A
   const pct_change = {
     income: pctChange(a.income, b.income),
     expense: pctChange(a.expense, b.expense),
@@ -166,8 +184,6 @@ router.get("/compare", requireAuth, async (req, res) => {
 });
 
 /**
- * NUEVO (Día 5 - Sección B)
- *
  * GET /summary/trend?from=YYYY-MM&to=YYYY-MM
  *
  * Devuelve una serie mensual (incluye meses vacíos) + MoM (% cambio mes a mes).
@@ -183,7 +199,6 @@ router.get("/compare", requireAuth, async (req, res) => {
 router.get("/trend", requireAuth, async (req, res) => {
   const { from, to } = req.query;
 
-  // 1) Validación básica
   const pFrom = monthSchema.safeParse(from);
   const pTo = monthSchema.safeParse(to);
 
@@ -194,22 +209,19 @@ router.get("/trend", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Mes inválido. from/to deben estar entre 01 y 12" });
   }
 
-  // 2) Validación de orden (from <= to) usando comparación lexicográfica
-  // YYYY-MM funciona bien para esto.
+  // YYYY-MM funciona lexicográficamente para orden
   if (from > to) {
     return res.status(400).json({ error: "Rango inválido. from debe ser <= to" });
   }
 
   const userId = req.user.id;
 
-  // 3) Generar lista de meses del rango
+  // 1) Lista completa de meses
   const months = monthsBetween(from, to);
 
-  // 4) Query única agrupada por mes
-  // - date_trunc('month', occurred_on)::date da el primer día del mes
-  // - devolvemos month_key como YYYY-MM para mapear fácil
+  // 2) Query agrupada por mes en el rango
   const startDate = monthToStartDate(from);
-  const endDateExclusive = monthToStartDate(to); // luego le sumamos +1 month en SQL
+  const endDateExclusiveBase = monthToStartDate(to);
 
   const sql = `
     SELECT
@@ -227,9 +239,9 @@ router.get("/trend", requireAuth, async (req, res) => {
     ORDER BY 1 ASC
   `;
 
-  const result = await pool.query(sql, [userId, startDate, endDateExclusive]);
+  const result = await pool.query(sql, [userId, startDate, endDateExclusiveBase]);
 
-  // 5) Mapear resultados SQL por mes
+  // 3) Mapear resultados por mes
   const byMonth = new Map();
   for (const row of result.rows) {
     byMonth.set(row.month, {
@@ -241,22 +253,15 @@ router.get("/trend", requireAuth, async (req, res) => {
     });
   }
 
-  // 6) Construir serie completa, rellenar meses vacíos con 0
+  // 4) Rellenar meses vacíos con 0
   const series = months.map((m) => {
     const found = byMonth.get(m);
     if (found) return found;
 
-    return {
-      month: m,
-      income: 0,
-      expense: 0,
-      balance: 0,
-      count: 0,
-    };
+    return { month: m, income: 0, expense: 0, balance: 0, count: 0 };
   });
 
-  // 7) Calcular MoM en Node (más claro y controlado)
-  // mom_* es % vs mes anterior. Null si no aplica.
+  // 5) Calcular MoM
   for (let i = 0; i < series.length; i++) {
     const cur = series[i];
     const prev = i === 0 ? null : series[i - 1];
