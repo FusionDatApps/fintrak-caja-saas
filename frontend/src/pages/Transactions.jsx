@@ -2,25 +2,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-// API genérica del proyecto (ya existente)
+// API genérica del proyecto
 import { apiDelete, apiGet, apiPost } from "../lib/api";
 
-// API específica de categorías (la creamos en Día 5)
+// API específica de categorías
 import { getCategories } from "../lib/categoriesApi";
 
 /**
- * =========================================================
- * Helpers (funciones pequeñas para no repetir lógica)
- * =========================================================
- */
-
-/**
  * Convierte "YYYY-MM-DD" a "YYYY-MM"
- * Ej: "2026-02-26" -> "2026-02"
- *
- * Por qué:
- * - Nuestro filtro por mes se basa en YYYY-MM
- * - El input date nos da YYYY-MM-DD
  */
 function ymFromDate(yyyy_mm_dd) {
   const s = String(yyyy_mm_dd || "");
@@ -28,11 +17,6 @@ function ymFromDate(yyyy_mm_dd) {
 }
 
 export default function Movimientos() {
-  /**
-   * =========================================================
-   * 1) Navegación y estados principales
-   * =========================================================
-   */
   const navigate = useNavigate();
 
   // Lista de movimientos del mes activo
@@ -43,95 +27,58 @@ export default function Movimientos() {
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
 
+  // Categorías activas
+  const [categories, setCategories] = useState([]);
+
   /**
-   * =========================================================
-   * 2) Estado del formulario de creación
-   * =========================================================
-   *
-   * Nota:
-   * - category sigue siendo texto (compatibilidad con tabla transactions.category TEXT)
-   * - más adelante podríamos migrar a category_id, pero hoy NO.
+   * Formulario:
+   * Ahora usamos category_id en lugar de category texto.
    */
   const [form, setForm] = useState({
     type: "income",
     amount: "",
-    category: "ventas", // valor por defecto (si existe)
+    category_id: "",
     occurred_on: new Date().toISOString().slice(0, 10),
     description: "",
     payment_method: "cash",
     status: "paid",
   });
 
-  /**
-   * =========================================================
-   * 3) Mes activo (derivado de occurred_on)
-   * =========================================================
-   *
-   * Por qué useMemo:
-   * - month depende de occurred_on
-   * - evita recalcular si occurred_on no cambia
-   */
+  // Mes activo derivado de occurred_on
   const month = useMemo(() => ymFromDate(form.occurred_on), [form.occurred_on]);
 
   /**
-   * =========================================================
-   * 4) Categorías (cargadas desde backend)
-   * =========================================================
-   */
-  const [categories, setCategories] = useState([]);
-
-  /**
-   * =========================================================
-   * 5) Cargar categorías activas al montar
-   * =========================================================
-   *
-   * Por qué separado del load de transacciones:
-   * - Son recursos distintos (/categories vs /transactions)
-   * - Si falla categorías, igual debería funcionar el CRUD de transacciones
+   * Cargar categorías activas al montar
    */
   useEffect(() => {
     const loadCategories = async () => {
       const token = localStorage.getItem("token");
-      if (!token) {
-        // Si no hay token, el resto de la app ya redirige por su lógica
-        return;
-      }
+      if (!token) return;
 
       try {
-        const data = await getCategories(token); // solo activas
+        const data = await getCategories(token);
         const list = data.items || [];
         setCategories(list);
 
-        // Ajuste defensivo:
-        // Si la categoría actual del form no existe en el listado activo,
-        // ponemos la primera disponible para evitar que el <select> quede "inconsistente".
         if (list.length > 0) {
-          const exists = list.some((c) => c.name === form.category);
+          const exists = list.some((c) => c.id === form.category_id);
           if (!exists) {
-            setForm((f) => ({ ...f, category: list[0].name }));
+            setForm((f) => ({ ...f, category_id: list[0].id }));
           }
         } else {
-          // Si no hay categorías activas, dejamos category vacía (y el select muestra "Sin categorías")
-          setForm((f) => ({ ...f, category: "" }));
+          setForm((f) => ({ ...f, category_id: "" }));
         }
       } catch (err) {
-        // No bloqueamos el flujo de transacciones; solo dejamos log para depurar
         console.error("Error cargando categorías", err);
       }
     };
 
     loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // solo al montar
+  }, []);
 
   /**
-   * =========================================================
-   * 6) Cargar movimientos del mes activo
-   * =========================================================
-   *
-   * Por qué:
-   * - el usuario trabaja por meses
-   * - month cambia al cambiar el date o el selector type="month"
+   * Cargar movimientos del mes activo
    */
   const load = async () => {
     setError("");
@@ -154,9 +101,7 @@ export default function Movimientos() {
   };
 
   /**
-   * =========================================================
-   * 7) Effect: recargar transacciones cuando cambia el mes
-   * =========================================================
+   * Recargar cuando cambia el mes
    */
   useEffect(() => {
     load();
@@ -164,9 +109,7 @@ export default function Movimientos() {
   }, [navigate, month]);
 
   /**
-   * =========================================================
-   * 8) Handlers de formulario (input/select)
-   * =========================================================
+   * Manejo genérico de inputs/selects
    */
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -174,13 +117,7 @@ export default function Movimientos() {
   };
 
   /**
-   * =========================================================
-   * 9) Crear movimiento (POST /transactions)
-   * =========================================================
-   *
-   * Reglas de negocio mínimas:
-   * - amount > 0
-   * - category debe existir (si no hay categorías, bloqueamos)
+   * Crear movimiento
    */
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -192,8 +129,7 @@ export default function Movimientos() {
       return;
     }
 
-    // Si no hay categorías activas, no dejamos crear (evita category vacío)
-    if (!form.category || !String(form.category).trim()) {
+    if (!form.category_id || !String(form.category_id).trim()) {
       setError("No puedes crear un movimiento sin categoría activa. Crea una categoría primero.");
       return;
     }
@@ -201,7 +137,7 @@ export default function Movimientos() {
     const payload = {
       ...form,
       amount: Number(form.amount),
-      category: String(form.category).trim(),
+      category_id: String(form.category_id).trim(),
     };
 
     if (!payload.amount || payload.amount <= 0) {
@@ -212,10 +148,9 @@ export default function Movimientos() {
     try {
       await apiPost("/transactions", payload, token);
 
-      // Limpiamos campos típicos, mantenemos fecha/categoría para velocidad operativa
+      // Limpiamos monto y descripción, conservando fecha/categoría por velocidad operativa
       setForm((f) => ({ ...f, amount: "", description: "" }));
 
-      // Recargar lista (más confiable que insertar a mano)
       await load();
     } catch (err) {
       setError(err.message);
@@ -223,9 +158,7 @@ export default function Movimientos() {
   };
 
   /**
-   * =========================================================
-   * 10) Eliminar movimiento (DELETE /transactions/:id)
-   * =========================================================
+   * Eliminar movimiento
    */
   const handleDelete = async (id) => {
     setError("");
@@ -247,19 +180,12 @@ export default function Movimientos() {
     }
   };
 
-  /**
-   * =========================================================
-   * 11) Render UI
-   * =========================================================
-   */
   return (
     <div>
       <h2>Movimientos</h2>
 
-      {/* Indicador del mes activo (derivado del date) */}
       <p style={{ fontSize: 12, color: "#555" }}>Mes activo: {month}</p>
 
-      {/* Selector de mes: cambia occurred_on al día 01 del mes elegido */}
       <div style={{ marginBottom: 12 }}>
         <label style={{ fontSize: 12, color: "#555", marginRight: 8 }}>
           Cambiar mes:
@@ -269,10 +195,10 @@ export default function Movimientos() {
           type="month"
           value={month}
           onChange={(e) => {
-            const m = e.target.value; // "2026-02"
+            const m = e.target.value;
             setForm((f) => ({
               ...f,
-              occurred_on: `${m}-01`, // fija el día 01 del mes elegido
+              occurred_on: `${m}-01`,
             }));
           }}
         />
@@ -280,7 +206,6 @@ export default function Movimientos() {
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
-      {/* Formulario creación */}
       <form
         onSubmit={handleCreate}
         style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}
@@ -298,10 +223,9 @@ export default function Movimientos() {
           onChange={handleChange}
         />
 
-        {/* Categoría PRO: select alimentado desde /categories */}
         <select
-          name="category"
-          value={form.category}
+          name="category_id"
+          value={form.category_id}
           onChange={handleChange}
           disabled={categories.length === 0}
           title={categories.length === 0 ? "Crea una categoría en /categories" : ""}
@@ -310,7 +234,7 @@ export default function Movimientos() {
             <option value="">Sin categorías</option>
           ) : (
             categories.map((c) => (
-              <option key={c.id} value={c.name}>
+              <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))
@@ -352,7 +276,6 @@ export default function Movimientos() {
         </button>
       </form>
 
-      {/* Lista */}
       {loading ? (
         <p>Cargando...</p>
       ) : items.length === 0 ? (
@@ -361,7 +284,7 @@ export default function Movimientos() {
         <ul>
           {items.map((t) => (
             <li key={t.id} style={{ marginBottom: 8 }}>
-              <strong>{t.type}</strong> ${t.amount} | {t.category} |{" "}
+              <strong>{t.type}</strong> ${t.amount} | {t.category_name || t.category} |{" "}
               {String(t.occurred_on).slice(0, 10)} | {t.status}
               {t.description ? ` | ${t.description}` : ""}{" "}
               <button
