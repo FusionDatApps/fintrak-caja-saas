@@ -134,29 +134,52 @@ router.put("/:id", requireAuth, async (req, res) => {
 /*
   DELETE /categories/:id
   Soft delete: marca is_active=false
+  Regla de negocio:
+  NO permitir desactivar una categoría con transacciones asociadas
 */
 router.delete("/:id", requireAuth, async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user.id;
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
 
-  const result = await pool.query(
-    `
-    UPDATE categories
-    SET is_active = false
-    WHERE id = $1
-      AND user_id = $2
-    RETURNING id
-    `,
-    [id, userId]
-  );
+    // Verificar si la categoría tiene transacciones asociadas
+    const txCountResult = await pool.query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM transactions
+      WHERE user_id = $1
+        AND category_id = $2
+      `,
+      [userId, id]
+    );
 
-  if (result.rowCount === 0) {
-    return res.status(404).json({
-      error: "Categoría no encontrada",
-    });
+    if (txCountResult.rows[0].total > 0) {
+      return res.status(400).json({
+        error: "No se puede desactivar una categoría con transacciones asociadas",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE categories
+      SET is_active = false
+      WHERE id = $1
+        AND user_id = $2
+      RETURNING id
+      `,
+      [id, userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        error: "Categoría no encontrada",
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("DELETE /categories/:id error:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
   }
-
-  res.json({ ok: true });
 });
-
 export default router;
