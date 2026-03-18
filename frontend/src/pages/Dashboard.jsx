@@ -1,15 +1,17 @@
 ﻿// frontend/src/pages/Dashboard.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-// apiGet se usa para /me (validación del token)
 import { apiGet } from "../lib/api";
-
-// Estas funciones encapsulan llamadas al backend (summary/compare/trend)
-import { getMonthlyCompare, getMonthlySummary, getMonthlyTrend } from "../lib/summaryApi";
+import {
+  getCategorySummary,
+  getMonthlyCompare,
+  getMonthlySummary,
+  getMonthlyTrend,
+} from "../lib/summaryApi";
 
 /**
- * Devuelve el mes actual en formato YYYY-MM (compatible con <input type="month" />).
+ * Devuelve el mes actual en formato YYYY-MM.
  */
 function ymToday() {
   const d = new Date();
@@ -19,7 +21,7 @@ function ymToday() {
 }
 
 /**
- * Formatea un número como moneda COP (sin símbolo, se lo ponemos nosotros).
+ * Formatea número como COP sin símbolo.
  */
 function moneyCOP(v) {
   const n = Number(v || 0);
@@ -27,8 +29,7 @@ function moneyCOP(v) {
 }
 
 /**
- * Formatea porcentajes para MoM / % cambio.
- * - El backend devuelve null cuando no se puede calcular (por ejemplo base=0).
+ * Formatea porcentajes.
  */
 function fmtPct(v) {
   if (v === null || v === undefined) return "N/A";
@@ -41,43 +42,59 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   // =========================
-  // ESTADO: sesión y resumen (MVP)
+  // SESIÓN
   // =========================
   const [user, setUser] = useState(null);
-
-  // Mes activo para el resumen mensual (selector existente del MVP)
-  const [month, setMonth] = useState(ymToday());
-
-  const [summary, setSummary] = useState(null);
   const [authError, setAuthError] = useState("");
-  const [summaryError, setSummaryError] = useState("");
+  const [userLoading, setUserLoading] = useState(true);
 
   // =========================
-  // ESTADO: comparativo mensual (Mes A vs Mes B)
+  // RESUMEN MENSUAL
+  // =========================
+  const [month, setMonth] = useState(ymToday());
+  const [summary, setSummary] = useState(null);
+  const [summaryError, setSummaryError] = useState("");
+  const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // =========================
+  // CATEGORÍAS
+  // =========================
+  const [categorySummary, setCategorySummary] = useState([]);
+  const [categoryError, setCategoryError] = useState("");
+  const [categoryLoading, setCategoryLoading] = useState(false);
+
+  // =========================
+  // COMPARATIVO
   // =========================
   const [monthA, setMonthA] = useState(ymToday());
   const [monthB, setMonthB] = useState(ymToday());
-
   const [compare, setCompare] = useState(null);
   const [compareError, setCompareError] = useState("");
   const [compareLoading, setCompareLoading] = useState(false);
 
   // =========================
-  // ESTADO: tendencia + MoM (rango From/To)
+  // TENDENCIA
   // =========================
   const [trendFrom, setTrendFrom] = useState(ymToday());
   const [trendTo, setTrendTo] = useState(ymToday());
-
   const [trend, setTrend] = useState(null);
   const [trendError, setTrendError] = useState("");
   const [trendLoading, setTrendLoading] = useState(false);
 
   /**
-   * EFECTO PRINCIPAL:
-   * 1) Verifica token y carga /me
-   * 2) Carga resumen mensual del mes seleccionado (month)
-   *
-   * Nota: compare/trend NO se cargan automáticamente para evitar spamear el backend.
+   * Base lista para gráficos futuros.
+   */
+  const categoryChartData = useMemo(() => {
+    return categorySummary.map((item) => ({
+      id: item.category_id,
+      label: item.category_name,
+      value: Number(item.total_amount || 0),
+      percentage: Number(item.percentage || 0),
+    }));
+  }, [categorySummary]);
+
+  /**
+   * 1) Validar sesión una sola vez
    */
   useEffect(() => {
     let alive = true;
@@ -90,39 +107,91 @@ export default function Dashboard() {
 
     (async () => {
       try {
-        // 1) Validar token con /me (si falla, es sesión inválida)
+        setUserLoading(true);
         const me = await apiGet("/me", token);
         if (!alive) return;
 
         setUser(me.user);
         setAuthError("");
-
-        // 2) Cargar resumen mensual (si falla, NO cerramos sesión)
-        try {
-          const sum = await getMonthlySummary(token, month);
-          if (!alive) return;
-
-          setSummary(sum);
-          setSummaryError("");
-        } catch (err) {
-          if (!alive) return;
-
-          setSummary(null);
-          setSummaryError(err.message || "No se pudo cargar el resumen");
-        }
       } catch (err) {
         if (!alive) return;
 
+        setUser(null);
         setAuthError(err.message || "Sesión inválida");
         localStorage.removeItem("token");
         navigate("/login");
+      } finally {
+        if (alive) {
+          setUserLoading(false);
+        }
       }
     })();
 
     return () => {
       alive = false;
     };
-  }, [navigate, month]);
+  }, [navigate]);
+
+  /**
+   * 2) Cargar resumen mensual y categorías cada vez que cambia `month`
+   *    Limpiamos estado previo para evitar mostrar datos viejos.
+   */
+  useEffect(() => {
+    let alive = true;
+
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    if (!user) return;
+
+    // Limpiar estado visual anterior antes de recargar
+    setSummary(null);
+    setSummaryError("");
+    setSummaryLoading(true);
+
+    setCategorySummary([]);
+    setCategoryError("");
+    setCategoryLoading(true);
+
+    (async () => {
+      try {
+        const sum = await getMonthlySummary(token, month);
+        if (!alive) return;
+
+        setSummary(sum);
+        setSummaryError("");
+      } catch (err) {
+        if (!alive) return;
+
+        setSummary(null);
+        setSummaryError(err.message || "No se pudo cargar el resumen");
+      } finally {
+        if (alive) {
+          setSummaryLoading(false);
+        }
+      }
+
+      try {
+        const byCategory = await getCategorySummary(token, month);
+        if (!alive) return;
+
+        setCategorySummary(Array.isArray(byCategory) ? byCategory : []);
+        setCategoryError("");
+      } catch (err) {
+        if (!alive) return;
+
+        setCategorySummary([]);
+        setCategoryError(err.message || "No se pudo cargar el resumen por categoría");
+      } finally {
+        if (alive) {
+          setCategoryLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [user, month]);
 
   /**
    * Acción explícita: comparar Mes A vs Mes B.
@@ -188,12 +257,14 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h2>Dashboard</h2>
+      <h2>Panel de control</h2>
 
       {authError && <p style={{ color: "red" }}>{authError}</p>}
 
-      {!user ? (
+      {userLoading ? (
         <p>Cargando usuario...</p>
+      ) : !user ? (
+        <p>No se pudo cargar el usuario.</p>
       ) : (
         <>
           <p>
@@ -213,10 +284,9 @@ export default function Dashboard() {
           <hr style={{ margin: "16px 0" }} />
 
           {/* =========================
-              MVP: Resumen mensual actual
+              RESUMEN MENSUAL
              ========================= */}
-          <h3>Resumen del mes: {month}</h3>
-
+         <h3>Resumen del mes: {month}</h3>
           <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 12, color: "#555", marginRight: 8 }}>Cambiar mes:</label>
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
@@ -224,8 +294,10 @@ export default function Dashboard() {
 
           {summaryError && <p style={{ color: "crimson" }}>Error cargando resumen: {summaryError}</p>}
 
-          {!summary ? (
+          {summaryLoading ? (
             <p>Cargando resumen...</p>
+          ) : !summary ? (
+            <p>No hay resumen para el mes seleccionado.</p>
           ) : (
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
@@ -234,12 +306,12 @@ export default function Dashboard() {
               </div>
 
               <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-                <div>Egresos</div>
+                <div>Salidas</div>
                 <strong>${moneyCOP(summary.expense)}</strong>
               </div>
 
               <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-                <div>Balance</div>
+                <div>Saldo</div>
                 <strong>${moneyCOP(summary.balance)}</strong>
               </div>
 
@@ -250,9 +322,72 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* ==========================================
-              Día 5 - A: Comparativo mensual (A vs B)
-             ========================================== */}
+          {/* =========================
+              GASTOS POR CATEGORÍA
+             ========================= */}
+          <hr style={{ margin: "20px 0" }} />
+          <h3>Gastos por categoría</h3>
+
+          <p style={{ fontSize: 12, color: "#666" }}>
+            Mes activo: <strong>{month}</strong>
+          </p>
+
+          {categoryError && (
+            <p style={{ color: "crimson" }}>Error cargando categorías: {categoryError}</p>
+          )}
+
+          {categoryLoading ? (
+            <p>Cargando categorías...</p>
+          ) : categorySummary.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#666" }}>
+              No hay gastos por categoría para el mes seleccionado.
+            </p>
+          ) : (
+            <div style={{ marginTop: 12 }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", maxWidth: 760 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>
+                      Clasificación
+                    </th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>
+                      Categoría
+                    </th>
+                    <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: 8 }}>
+                      Total
+                    </th>
+                    <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: 8 }}>
+                      %
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categorySummary.map((item, index) => (
+                    <tr key={item.category_id}>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>N.° {index + 1}</td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                        {item.category_name}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        ${moneyCOP(item.total_amount)}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                        {Number(item.percentage || 0).toFixed(2)} %
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
+                Base lista para gráfico: {categoryChartData.length} categorías
+              </p>
+            </div>
+          )}
+
+          {/* =========================
+              COMPARATIVO
+             ========================= */}
           <hr style={{ margin: "20px 0" }} />
           <h3>Comparativo mensual (Mes A vs Mes B)</h3>
 
@@ -276,7 +411,7 @@ export default function Dashboard() {
 
           {!compare ? (
             <p style={{ fontSize: 12, color: "#666" }}>
-              Selecciona dos meses y pulsa <strong>Comparar</strong>.
+              Selecciona dos meses y pulsa Comparar
             </p>
           ) : (
             <div style={{ marginTop: 12 }}>
@@ -334,14 +469,14 @@ export default function Dashboard() {
               </table>
 
               <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-                Nota: el % cambio muestra <strong>N/A</strong> cuando el valor base (Mes A) es 0.
+                Nota: el % cambio muestra N/A cuando el valor base (Mes A) es 0.
               </p>
             </div>
           )}
 
-          {/* ==========================================
-              Día 5 - B: Tendencia mensual + MoM
-             ========================================== */}
+          {/* =========================
+              TENDENCIA
+             ========================= */}
           <hr style={{ margin: "20px 0" }} />
           <h3>Tendencia mensual y crecimiento MoM</h3>
 
@@ -365,7 +500,7 @@ export default function Dashboard() {
 
           {!trend ? (
             <p style={{ fontSize: 12, color: "#666" }}>
-              Selecciona un rango y pulsa <strong>Cargar tendencia</strong>.
+              Selecciona un rango y pulsa Cargar tendencia
             </p>
           ) : (
             <div style={{ marginTop: 12 }}>
@@ -441,7 +576,7 @@ export default function Dashboard() {
               </table>
 
               <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-                Nota: MoM es <strong>N/A</strong> cuando no hay mes anterior o la base del mes anterior es 0.
+                Nota: MoM es N/A cuando no hay mes anterior o la base del mes anterior es 0.
               </p>
             </div>
           )}

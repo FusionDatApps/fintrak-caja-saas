@@ -10,6 +10,14 @@ export function getMonthlySummary(token, month) {
 }
 
 /**
+ * Resumen por categoría:
+ * Backend: GET /summary/by-category?month=YYYY-MM
+ */
+export function getCategorySummary(token, month) {
+  return apiGet(`/summary/by-category?month=${month}`, token);
+}
+
+/**
  * Comparativo mensual:
  * Backend: GET /summary/compare?monthA=YYYY-MM&monthB=YYYY-MM
  */
