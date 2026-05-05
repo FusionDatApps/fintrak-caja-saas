@@ -339,4 +339,86 @@ router.get("/trend", requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Genera insights del mes usando:
+ * - resumen mensual
+ * - categorías
+ */
+async function getInsightsForUser(userId, month) {
+  const [summary, categories] = await Promise.all([
+    getMonthlySummaryForUser(userId, month),
+    getCategorySummaryForUser(userId, month),
+  ]);
+
+  const income = Number(summary.income);
+  const expense = Number(summary.expense);
+  const balance = Number(summary.balance);
+
+  const insights = [];
+
+  // Insight 1: balance
+  if (income > expense) {
+    insights.push(
+      `Tus ingresos superan tus gastos en $${balance.toLocaleString()}`
+    );
+  } else if (expense > income) {
+    insights.push(
+      `Tus gastos superan tus ingresos en $${Math.abs(balance).toLocaleString()}`
+    );
+  } else {
+    insights.push(`Tus ingresos y gastos están equilibrados`);
+  }
+
+  // Insight 2: categoría dominante
+  if (categories.length > 0) {
+    const top = categories[0];
+    insights.push(
+      `Tu mayor gasto fue en "${top.category_name}" (${top.percentage}%)`
+    );
+  }
+
+  // Insight 3: ratio gasto/ingreso
+  if (income > 0) {
+    const ratio = ((expense / income) * 100).toFixed(0);
+    insights.push(
+      `Tus gastos representan el ${ratio}% de tus ingresos`
+    );
+  }
+
+  return {
+    month,
+    insights,
+  };
+}
+
+/**
+ * GET /summary/insights?month=YYYY-MM
+ */
+router.get("/insights", requireAuth, async (req, res) => {
+  try {
+    const month = req.query.month;
+
+    const parsed = monthSchema.safeParse(month);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "month inválido. Usa YYYY-MM" });
+    }
+
+    if (!isValidMonthRange(month)) {
+      return res.status(400).json({
+        error: "month inválido. Mes debe estar entre 01 y 12",
+      });
+    }
+
+    const userId = req.user.id;
+
+    const data = await getInsightsForUser(userId, month);
+
+    return res.json(data);
+  } catch (error) {
+    console.error("Error en /summary/insights:", error);
+    return res.status(500).json({
+      error: "Error interno al generar insights",
+    });
+  }
+});
 export default router;
