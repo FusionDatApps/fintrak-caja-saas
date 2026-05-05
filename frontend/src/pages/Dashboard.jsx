@@ -17,11 +17,13 @@ import {
 } from "recharts";
 
 import { apiGet } from "../lib/api";
+
 import {
-  getCategorySummary,
   getMonthlyCompare,
   getMonthlySummary,
   getMonthlyTrend,
+  getMonthlyInsights,
+  getCategorySummary,
 } from "../lib/summaryApi";
 
 /**
@@ -71,6 +73,13 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [summaryError, setSummaryError] = useState("");
   const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // =========================
+  // INSIGHTS
+  // =========================
+  const [insights, setInsights] = useState([]);
+  const [insightsError, setInsightsError] = useState("");
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
   // =========================
   // CATEGORÍAS
@@ -124,7 +133,7 @@ export default function Dashboard() {
   }, [trend]);
 
   /**
-   * 1) Validar sesión una sola vez
+   * 1) Validar sesión una sola vez.
    */
   useEffect(() => {
     let alive = true;
@@ -163,8 +172,7 @@ export default function Dashboard() {
   }, [navigate]);
 
   /**
-   * 2) Cargar resumen mensual y categorías cada vez que cambia `month`
-   *    Limpiamos estado previo para evitar mostrar datos viejos.
+   * 2) Cargar resumen mensual, insights y categorías cada vez que cambia `month`.
    */
   useEffect(() => {
     let alive = true;
@@ -177,41 +185,47 @@ export default function Dashboard() {
     setSummaryError("");
     setSummaryLoading(true);
 
+    setInsights([]);
+    setInsightsError("");
+    setInsightsLoading(true);
+
     setCategorySummary([]);
     setCategoryError("");
     setCategoryLoading(true);
 
     (async () => {
       try {
-        const sum = await getMonthlySummary(token, month);
+        const [sum, insightsData, byCategory] = await Promise.all([
+          getMonthlySummary(token, month),
+          getMonthlyInsights(token, month),
+          getCategorySummary(token, month),
+        ]);
+
         if (!alive) return;
 
         setSummary(sum);
         setSummaryError("");
-      } catch (err) {
-        if (!alive) return;
 
-        setSummary(null);
-        setSummaryError(err.message || "No se pudo cargar el resumen");
-      } finally {
-        if (alive) {
-          setSummaryLoading(false);
-        }
-      }
-
-      try {
-        const byCategory = await getCategorySummary(token, month);
-        if (!alive) return;
+        setInsights(Array.isArray(insightsData.insights) ? insightsData.insights : []);
+        setInsightsError("");
 
         setCategorySummary(Array.isArray(byCategory) ? byCategory : []);
         setCategoryError("");
       } catch (err) {
         if (!alive) return;
 
+        setSummary(null);
+        setSummaryError(err.message || "No se pudo cargar el resumen");
+
+        setInsights([]);
+        setInsightsError(err.message || "No se pudieron cargar los insights");
+
         setCategorySummary([]);
         setCategoryError(err.message || "No se pudo cargar el resumen por categoría");
       } finally {
         if (alive) {
+          setSummaryLoading(false);
+          setInsightsLoading(false);
           setCategoryLoading(false);
         }
       }
@@ -353,6 +367,30 @@ export default function Dashboard() {
           )}
 
           {/* =========================
+              INSIGHTS DEL MES
+             ========================= */}
+          <hr style={{ margin: "20px 0" }} />
+          <h3>📊 Análisis del mes</h3>
+
+          {insightsError && <p style={{ color: "crimson" }}>{insightsError}</p>}
+
+          {insightsLoading ? (
+            <p>Cargando análisis...</p>
+          ) : insights.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#666" }}>
+              No hay insights disponibles para este mes.
+            </p>
+          ) : (
+            <ul style={{ paddingLeft: 18 }}>
+              {insights.map((text, idx) => (
+                <li key={`${month}-insight-${idx}`} style={{ marginBottom: 6 }}>
+                  {text}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* =========================
               GASTOS POR CATEGORÍA
              ========================= */}
           <hr style={{ margin: "20px 0" }} />
@@ -464,9 +502,7 @@ export default function Dashboard() {
           {compareError && <p style={{ color: "crimson" }}>{compareError}</p>}
 
           {!compare ? (
-            <p style={{ fontSize: 12, color: "#666" }}>
-              Selecciona dos meses y pulsa Comparar
-            </p>
+            <p style={{ fontSize: 12, color: "#666" }}>Selecciona dos meses y pulsa Comparar</p>
           ) : (
             <div style={{ marginTop: 12 }}>
               <table style={{ borderCollapse: "collapse", width: "100%", maxWidth: 760 }}>
@@ -553,9 +589,7 @@ export default function Dashboard() {
           {trendError && <p style={{ color: "crimson" }}>{trendError}</p>}
 
           {!trend ? (
-            <p style={{ fontSize: 12, color: "#666" }}>
-              Selecciona un rango y pulsa Cargar tendencia
-            </p>
+            <p style={{ fontSize: 12, color: "#666" }}>Selecciona un rango y pulsa Cargar tendencia</p>
           ) : (
             <div style={{ marginTop: 12 }}>
               <p style={{ fontSize: 12, color: "#666" }}>
