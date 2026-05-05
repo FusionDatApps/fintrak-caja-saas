@@ -2,6 +2,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from "recharts";
+
 import { apiGet } from "../lib/api";
 import {
   getCategorySummary,
@@ -37,6 +51,8 @@ function fmtPct(v) {
   if (Number.isNaN(n)) return "N/A";
   return `${n.toFixed(1)}%`;
 }
+
+const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#AA66CC"];
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -82,7 +98,7 @@ export default function Dashboard() {
   const [trendLoading, setTrendLoading] = useState(false);
 
   /**
-   * Base lista para gráficos futuros.
+   * Base lista para gráfico de categorías.
    */
   const categoryChartData = useMemo(() => {
     return categorySummary.map((item) => ({
@@ -92,6 +108,20 @@ export default function Dashboard() {
       percentage: Number(item.percentage || 0),
     }));
   }, [categorySummary]);
+
+  /**
+   * Base para gráfico de tendencia.
+   */
+  const trendChartData = useMemo(() => {
+    if (!trend?.months) return [];
+
+    return trend.months.map((m) => ({
+      month: m.month,
+      income: Number(m.income || 0),
+      expense: Number(m.expense || 0),
+      balance: Number(m.balance || 0),
+    }));
+  }, [trend]);
 
   /**
    * 1) Validar sesión una sola vez
@@ -143,7 +173,6 @@ export default function Dashboard() {
     if (!token) return;
     if (!user) return;
 
-    // Limpiar estado visual anterior antes de recargar
     setSummary(null);
     setSummaryError("");
     setSummaryLoading(true);
@@ -286,7 +315,8 @@ export default function Dashboard() {
           {/* =========================
               RESUMEN MENSUAL
              ========================= */}
-         <h3>Resumen del mes: {month}</h3>
+          <h3>Resumen del mes: {month}</h3>
+
           <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 12, color: "#555", marginRight: 8 }}>Cambiar mes:</label>
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
@@ -378,6 +408,30 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
+
+              <div style={{ width: "100%", height: 320, marginTop: 20 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={categoryChartData}
+                      dataKey="value"
+                      nameKey="label"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      label={({ name, percent }) =>
+                        `${name}: ${((percent || 0) * 100).toFixed(0)}%`
+                      }
+                    >
+                      {categoryChartData.map((entry, index) => (
+                        <Cell key={`cell-${entry.id}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => `$${moneyCOP(value)}`} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
 
               <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
                 Base lista para gráfico: {categoryChartData.length} categorías
@@ -574,6 +628,21 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
+
+              <div style={{ width: "100%", height: 320, marginTop: 20 }}>
+                <ResponsiveContainer>
+                  <LineChart data={trendChartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip formatter={(value) => `$${moneyCOP(value)}`} />
+                    <Legend />
+                    <Line type="monotone" dataKey="income" stroke="#00C49F" name="Ingresos" />
+                    <Line type="monotone" dataKey="expense" stroke="#FF8042" name="Egresos" />
+                    <Line type="monotone" dataKey="balance" stroke="#0088FE" name="Balance" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
 
               <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
                 Nota: MoM es N/A cuando no hay mes anterior o la base del mes anterior es 0.
