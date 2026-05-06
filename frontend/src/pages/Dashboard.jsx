@@ -381,13 +381,68 @@ export default function Dashboard() {
               No hay insights disponibles para este mes.
             </p>
           ) : (
-            <ul style={{ paddingLeft: 18 }}>
-              {insights.map((text, idx) => (
-                <li key={`${month}-insight-${idx}`} style={{ marginBottom: 6 }}>
-                  {text}
-                </li>
-              ))}
-            </ul>
+           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+  {insights.map((item, idx) => {
+    const bg =
+      item.severity === "success"
+        ? "#ecfdf3"
+        : item.severity === "warning"
+        ? "#fff7ed"
+        : "#eff6ff";
+
+    const border =
+      item.severity === "success"
+        ? "#22c55e"
+        : item.severity === "warning"
+        ? "#f59e0b"
+        : "#3b82f6";
+
+    return (
+      <div
+        key={`${month}-insight-${idx}`}
+        style={{
+          border: `1px solid ${border}`,
+          borderLeft: `6px solid ${border}`,
+          background: bg,
+          borderRadius: 10,
+          padding: 14,
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom: 6,
+            color: "#111",
+          }}
+        >
+          {item.title}
+        </div>
+
+        <div
+          style={{
+            fontSize: 14,
+            lineHeight: 1.5,
+            color: "#333",
+          }}
+        >
+          {item.message}
+        </div>
+
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 11,
+            color: "#666",
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+          }}
+        >
+          {item.type}
+        </div>
+      </div>
+    );
+  })}
+</div>
           )}
 
           {/* =========================

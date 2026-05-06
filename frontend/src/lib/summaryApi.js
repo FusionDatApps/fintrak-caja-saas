@@ -33,20 +33,10 @@ export function getMonthlyTrend(token, from, to) {
   return apiGet(`/summary/trend?from=${from}&to=${to}`, token);
 }
 /**
- * Insights automáticos del mes:
- * Backend: GET /summary/insights?month=YYYY-MM
+ * Insights financieros avanzados:
+ * Backend: GET /summary/insights-advanced?month=YYYY-MM
  *
- * Retorna:
- * {
- *   month: string,
- *   insights: string[]
- * }
- *
- * Cada insight es una interpretación automática basada en:
- * - ingresos vs gastos
- * - categoría dominante de gasto
- * - relación gasto/ingreso
  */
 export function getMonthlyInsights(token, month) {
-  return apiGet(`/summary/insights?month=${month}`, token);
+  return apiGet(`/summary/insights-advanced?month=${month}`, token);
 }
