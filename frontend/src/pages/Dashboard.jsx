@@ -24,6 +24,7 @@ import {
   getMonthlyTrend,
   getMonthlyInsights,
   getCategorySummary,
+  getHealthScore,
 } from "../lib/summaryApi";
 
 /**
@@ -96,6 +97,13 @@ export default function Dashboard() {
   const [compare, setCompare] = useState(null);
   const [compareError, setCompareError] = useState("");
   const [compareLoading, setCompareLoading] = useState(false);
+
+  // =========================
+  // HEALTH SCORE
+  // =========================
+  const [healthScore, setHealthScore] = useState(null);
+  const [healthError, setHealthError] = useState("");
+  const [healthLoading, setHealthLoading] = useState(false);
 
   // =========================
   // TENDENCIA
@@ -192,13 +200,17 @@ export default function Dashboard() {
     setCategorySummary([]);
     setCategoryError("");
     setCategoryLoading(true);
+    setHealthScore(null);
+    setHealthError("");
+    setHealthLoading(true);
 
     (async () => {
       try {
-        const [sum, insightsData, byCategory] = await Promise.all([
+        const [sum, insightsData, byCategory, healthData] = await Promise.all([
           getMonthlySummary(token, month),
           getMonthlyInsights(token, month),
           getCategorySummary(token, month),
+          getHealthScore(token, month),
         ]);
 
         if (!alive) return;
@@ -211,6 +223,8 @@ export default function Dashboard() {
 
         setCategorySummary(Array.isArray(byCategory) ? byCategory : []);
         setCategoryError("");
+        setHealthScore(healthData);
+        setHealthError("");
       } catch (err) {
         if (!alive) return;
 
@@ -222,11 +236,14 @@ export default function Dashboard() {
 
         setCategorySummary([]);
         setCategoryError(err.message || "No se pudo cargar el resumen por categoría");
+        setHealthScore(null);
+        setHealthError(err.message || "No se pudo cargar el health score");
       } finally {
         if (alive) {
           setSummaryLoading(false);
           setInsightsLoading(false);
           setCategoryLoading(false);
+          setHealthLoading(false);
         }
       }
     })();
@@ -366,6 +383,147 @@ export default function Dashboard() {
             </div>
           )}
 
+          /* =========================
+    HEALTH SCORE
+========================= */
+<hr style={{ margin: "20px 0" }} />
+<h3>💚 Financial Health Score</h3>
+
+{healthError && <p style={{ color: "crimson" }}>{healthError}</p>}
+
+{healthLoading ? (
+  <p>Cargando health score...</p>
+) : !healthScore ? (
+  <p style={{ fontSize: 12, color: "#666" }}>
+    No hay health score disponible.
+  </p>
+) : (
+  <div
+    style={{
+      border: "1px solid #ddd",
+      borderRadius: 14,
+      padding: 18,
+      background:
+        healthScore.status === "healthy"
+          ? "#ecfdf3"
+          : healthScore.status === "stable"
+          ? "#fff7ed"
+          : "#fef2f2",
+    }}
+  >
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 12,
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 13, color: "#666" }}>
+          Estado financiero
+        </div>
+
+        <div
+          style={{
+            fontSize: 28,
+            fontWeight: 800,
+          }}
+        >
+          {healthScore.score}/100
+        </div>
+      </div>
+
+      <div
+        style={{
+          padding: "8px 14px",
+          borderRadius: 999,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          background:
+            healthScore.status === "healthy"
+              ? "#22c55e"
+              : healthScore.status === "stable"
+              ? "#f59e0b"
+              : "#ef4444",
+          color: "white",
+        }}
+      >
+        {healthScore.status}
+      </div>
+    </div>
+
+    <div
+      style={{
+        width: "100%",
+        height: 14,
+        borderRadius: 999,
+        background: "#e5e7eb",
+        overflow: "hidden",
+        marginBottom: 18,
+      }}
+    >
+      <div
+        style={{
+          width: `${healthScore.score}%`,
+          height: "100%",
+          background:
+            healthScore.status === "healthy"
+              ? "#22c55e"
+              : healthScore.status === "stable"
+              ? "#f59e0b"
+              : "#ef4444",
+        }}
+      />
+    </div>
+
+    <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+      <div>
+        <div style={{ fontSize: 12, color: "#666" }}>Ingresos</div>
+        <strong>${moneyCOP(healthScore.metrics.income)}</strong>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 12, color: "#666" }}>Gastos</div>
+        <strong>${moneyCOP(healthScore.metrics.expense)}</strong>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 12, color: "#666" }}>Ahorro</div>
+        <strong>{healthScore.metrics.savings_ratio}%</strong>
+      </div>
+    </div>
+
+    {healthScore.alerts.length > 0 && (
+      <div style={{ marginTop: 18 }}>
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom: 10,
+          }}
+        >
+          Alertas financieras
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {healthScore.alerts.map((alert, idx) => (
+            <div
+              key={`alert-${idx}`}
+              style={{
+                border: "1px solid #f59e0b",
+                background: "#fff7ed",
+                borderRadius: 10,
+                padding: 12,
+              }}
+            >
+              {alert.message}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+)}  
           {/* =========================
               INSIGHTS DEL MES
              ========================= */}

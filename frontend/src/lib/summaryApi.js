@@ -40,3 +40,10 @@ export function getMonthlyTrend(token, from, to) {
 export function getMonthlyInsights(token, month) {
   return apiGet(`/summary/insights-advanced?month=${month}`, token);
 }
+/**
+ * Health score financiero:
+ * Backend: GET /summary/health-score?month=YYYY-MM
+ */
+export function getHealthScore(token, month) {
+  return apiGet(`/summary/health-score?month=${month}`, token);
+}
