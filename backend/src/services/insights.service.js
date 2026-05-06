@@ -492,3 +492,121 @@ export function buildFinancialHealthScore({
     alerts,
   };
 }
+export function buildSmartRecommendations({
+  month,
+  summary,
+  categories,
+  previousSummary,
+}) {
+  const income = toNumber(summary?.income);
+  const expense = toNumber(summary?.expense);
+  const balance = toNumber(summary?.balance);
+
+  const prevBalance = toNumber(previousSummary?.balance);
+
+  const expenseRatio = safePercentage(expense, income) || 0;
+  const savingsRatio = safePercentage(balance, income) || 0;
+
+  const recommendations = [];
+
+  const topCategory = Array.isArray(categories) ? categories[0] : null;
+
+  // =====================================
+  // BALANCE NEGATIVO
+  // =====================================
+  if (balance < 0) {
+    recommendations.push({
+      priority: "high",
+      type: "negative_balance",
+      title: "Reducir gastos urgentes",
+      message:
+        "Tus gastos superan tus ingresos. Debes reducir gastos no esenciales inmediatamente.",
+    });
+  }
+
+  // =====================================
+  // GASTOS MUY ALTOS
+  // =====================================
+  if (expenseRatio >= 90) {
+    recommendations.push({
+      priority: "high",
+      type: "critical_expense_ratio",
+      title: "Controlar nivel de gasto",
+      message: `Tus gastos consumen ${Math.round(
+        expenseRatio
+      )}% de tus ingresos. El margen operativo es críticamente bajo.`,
+    });
+  } else if (expenseRatio >= 70) {
+    recommendations.push({
+      priority: "medium",
+      type: "high_expense_ratio",
+      title: "Optimizar gastos",
+      message:
+        "Tus gastos están creciendo demasiado frente a tus ingresos. Intenta reducir costos variables.",
+    });
+  }
+
+  // =====================================
+  // BAJO AHORRO
+  // =====================================
+  if (savingsRatio < 15 && income > 0) {
+    recommendations.push({
+      priority: "medium",
+      type: "low_savings",
+      title: "Mejorar capacidad de ahorro",
+      message: `Tu capacidad de ahorro es solo ${Math.round(
+        savingsRatio
+      )}%. Considera establecer una meta mínima del 20%.`,
+    });
+  }
+
+  // =====================================
+  // CONCENTRACIÓN DE GASTOS
+  // =====================================
+  if (topCategory && Number(topCategory.percentage) >= 70) {
+    recommendations.push({
+      priority: "high",
+      type: "expense_concentration",
+      title: "Reducir concentración de gastos",
+      message: `La categoría "${topCategory.category_name}" representa ${topCategory.percentage}% de tus gastos. Existe dependencia excesiva en una sola categoría.`,
+    });
+  } else if (topCategory && Number(topCategory.percentage) >= 50) {
+    recommendations.push({
+      priority: "medium",
+      type: "moderate_concentration",
+      title: "Diversificar gastos",
+      message: `La categoría "${topCategory.category_name}" concentra más de la mitad de tus gastos.`,
+    });
+  }
+
+  // =====================================
+  // CAÍDA VS MES ANTERIOR
+  // =====================================
+  if (prevBalance > 0 && balance < prevBalance * 0.5) {
+    recommendations.push({
+      priority: "high",
+      type: "balance_drop",
+      title: "Revisar caída financiera",
+      message:
+        "Tu balance cayó fuertemente frente al mes anterior. Revisa cambios operativos o aumentos recientes de gasto.",
+    });
+  }
+
+  // =====================================
+  // RECOMENDACIÓN POSITIVA
+  // =====================================
+  if (recommendations.length === 0) {
+    recommendations.push({
+      priority: "low",
+      type: "healthy_finances",
+      title: "Mantener estrategia actual",
+      message:
+        "Tus métricas financieras son saludables. Mantén disciplina de gasto y ahorro.",
+    });
+  }
+
+  return {
+    month,
+    recommendations,
+  };
+}
