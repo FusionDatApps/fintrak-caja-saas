@@ -374,3 +374,121 @@ export function buildAdvancedInsights({
     insights,
   };
 }
+export function buildFinancialHealthScore({
+  month,
+  summary,
+  categories,
+  previousSummary,
+}) {
+  const income = Number(summary?.income || 0);
+  const expense = Number(summary?.expense || 0);
+  const balance = Number(summary?.balance || 0);
+
+  const prevBalance = Number(previousSummary?.balance || 0);
+
+  const expenseRatio = income === 0 ? 0 : (expense / income) * 100;
+  const savingsRatio = income === 0 ? 0 : (balance / income) * 100;
+
+  let score = 50;
+
+  const alerts = [];
+
+  // =====================================
+  // BALANCE POSITIVO
+  // =====================================
+  if (balance > 0) {
+    score += 30;
+  } else {
+    score -= 40;
+
+    alerts.push({
+      type: "negative_balance",
+      severity: "danger",
+      message: "Tus gastos superan tus ingresos.",
+    });
+  }
+
+  // =====================================
+  // RELACIÓN GASTO / INGRESO
+  // =====================================
+  if (expenseRatio < 70) {
+    score += 25;
+  } else if (expenseRatio >= 90) {
+    score -= 30;
+
+    alerts.push({
+      type: "high_expense_ratio",
+      severity: "warning",
+      message: "Tus gastos consumen más del 90% de tus ingresos.",
+    });
+  }
+
+  // =====================================
+  // CAPACIDAD DE AHORRO
+  // =====================================
+  if (savingsRatio >= 20) {
+    score += 25;
+  }
+
+  // =====================================
+  // CATEGORÍA DOMINANTE
+  // =====================================
+  const topCategory = categories?.[0];
+
+  if (topCategory && Number(topCategory.percentage) > 60) {
+    score -= 15;
+
+    alerts.push({
+      type: "expense_concentration",
+      severity: "warning",
+      message: `La categoría "${topCategory.category_name}" domina ${topCategory.percentage}% de tus gastos.`,
+    });
+  } else {
+    score += 10;
+  }
+
+  // =====================================
+  // TENDENCIA VS MES ANTERIOR
+  // =====================================
+  if (prevBalance > 0 && balance < prevBalance * 0.6) {
+    score -= 20;
+
+    alerts.push({
+      type: "balance_drop",
+      severity: "warning",
+      message: "Tu balance cayó fuertemente frente al mes anterior.",
+    });
+  } else {
+    score += 10;
+  }
+
+  // =====================================
+  // NORMALIZAR SCORE
+  // =====================================
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  // =====================================
+  // STATUS FINAL
+  // =====================================
+  let status = "risky";
+
+  if (score >= 80) {
+    status = "healthy";
+  } else if (score >= 60) {
+    status = "stable";
+  }
+
+  return {
+    month,
+    score,
+    status,
+    metrics: {
+      income,
+      expense,
+      balance,
+      expense_ratio: Number(expenseRatio.toFixed(2)),
+      savings_ratio: Number(savingsRatio.toFixed(2)),
+    },
+    alerts,
+  };
+}

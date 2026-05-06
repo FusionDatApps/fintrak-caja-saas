@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware/requireAuth.js";
 import {
   buildMonthlyInsights,
   buildAdvancedInsights,
+  buildFinancialHealthScore,
 } from "../services/insights.service.js";
 
 const router = Router();
@@ -351,6 +352,49 @@ router.get("/insights-advanced", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Error en /summary/insights-advanced:", error);
     return res.status(500).json({ error: "Error interno al generar insights avanzados" });
+  }
+});
+
+router.get("/health-score", requireAuth, async (req, res) => {
+  try {
+    const month = req.query.month;
+
+    const parsed = monthSchema.safeParse(month);
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "month inválido. Usa YYYY-MM",
+      });
+    }
+
+    if (!isValidMonthRange(month)) {
+      return res.status(400).json({
+        error: "month inválido. Mes debe estar entre 01 y 12",
+      });
+    }
+
+    const previousMonth = previousMonthOf(month);
+
+    const [summary, categories, previousSummary] = await Promise.all([
+      getMonthlySummaryForUser(req.user.id, month),
+      getCategorySummaryForUser(req.user.id, month),
+      getMonthlySummaryForUser(req.user.id, previousMonth),
+    ]);
+
+    const data = buildFinancialHealthScore({
+      month,
+      summary,
+      categories,
+      previousSummary,
+    });
+
+    return res.json(data);
+  } catch (error) {
+    console.error("Error en /summary/health-score:", error);
+
+    return res.status(500).json({
+      error: "Error interno al generar health score",
+    });
   }
 });
 
